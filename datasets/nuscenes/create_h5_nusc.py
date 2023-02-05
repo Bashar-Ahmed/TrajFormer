@@ -4,7 +4,7 @@ import h5py
 import os
 import numpy as np
 
-from datasets.nuscenes.raw_dataset import NuScenesDataset
+from raw_dataset import NuScenesDataset
 
 
 '''
