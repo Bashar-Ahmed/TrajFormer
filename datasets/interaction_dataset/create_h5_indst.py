@@ -4,7 +4,7 @@ import glob
 import os
 import pandas as pd
 import numpy as np
-from datasets.interaction_dataset.utils import get_minmax_mapfile
+from utils import get_minmax_mapfile
 
 
 def get_args():

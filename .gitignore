@@ -6,9 +6,10 @@
 **/train
 **/val
 **/test
-datasets/nuscenes/v1.0-trainval_full/
 
+datasets/nuscenes/v1.0-trainval_full/
 datasets/argoverse/argoverse-api
+datasets/interaction_dataset/multi_agent
 
 results
 
