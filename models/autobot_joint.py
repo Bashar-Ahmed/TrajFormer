@@ -7,6 +7,9 @@ import torch.nn.functional as F
 
 from models.context_encoders import MapEncoderPtsMA
 
+from models.multiheadattention import MultiheadAttention
+from models.transformer import TransformerEncoder, TransformerDecoder
+from models.transformer import TransformerEncoderLayer, TransformerDecoderLayer
 
 def init(module, weight_init, bias_init, gain=1):
     weight_init(module.weight.data, gain=gain)
@@ -117,7 +120,7 @@ class AutoBotJoint(nn.Module):
         # ============================== MAP ENCODER ==========================
         if self.use_map_lanes:
             self.map_encoder = MapEncoderPtsMA(d_k=self.d_k, map_attr=self.map_attr, dropout=self.dropout)
-            self.map_attn_layers = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+            self.map_attn_layers = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
 
         # ============================== AGENT TYPES Encoders ==============================
         self.emb_agent_types = nn.Sequential(init_(nn.Linear(num_agent_types, self.d_k)))
@@ -154,9 +157,9 @@ class AutoBotJoint(nn.Module):
         nn.init.xavier_uniform_(self.P)
 
         if self.use_map_lanes:
-            self.mode_map_attn = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+            self.mode_map_attn = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
 
-        self.prob_decoder = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+        self.prob_decoder = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
         self.prob_predictor = init_(nn.Linear(self.d_k, 1))
 
         self.train()

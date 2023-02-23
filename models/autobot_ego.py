@@ -6,6 +6,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.context_encoders import MapEncoderCNN, MapEncoderPts
 
+from models.multiheadattention import MultiheadAttention
+from models.transformer import TransformerEncoder, TransformerDecoder
+from models.transformer import TransformerEncoderLayer, TransformerDecoderLayer
+
 
 def init(module, weight_init, bias_init, gain=1):
     '''
@@ -120,7 +124,7 @@ class AutoBotEgo(nn.Module):
                 )
         elif self.use_map_lanes:
             self.map_encoder = MapEncoderPts(d_k=d_k, map_attr=map_attr, dropout=self.dropout)
-            self.map_attn_layers = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=0.3)
+            self.map_attn_layers = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=0.3)
 
         # ============================== AutoBot-Ego DECODER ==============================
         self.Q = nn.Parameter(torch.Tensor(self.T, 1, self.c, self.d_k), requires_grad=True)
@@ -149,9 +153,9 @@ class AutoBotEgo(nn.Module):
                 init_(nn.Linear(self.d_k, self.d_k))
             )
         elif self.use_map_lanes:
-            self.mode_map_attn = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads)
+            self.mode_map_attn = MultiheadAttention(self.d_k, num_heads=self.num_heads)
 
-        self.prob_decoder = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+        self.prob_decoder = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
         self.prob_predictor = init_(nn.Linear(self.d_k, 1))
 
         self.train()
