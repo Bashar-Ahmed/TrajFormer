@@ -17,17 +17,17 @@ def load_model(args, config, k_attr, num_other_agents, pred_horizon, map_attr):
         device = torch.device("cpu")
 
     autobot_model = AutoBotEgo(k_attr=k_attr,
-                               d_k=config['hidden_size'],
+                               d_k=config.hidden_size,
                                _M=num_other_agents,
-                               c=config['num_modes'],
+                               c=config.num_modes,
                                T=pred_horizon,
-                               L_enc=config['num_encoder_layers'],
-                               dropout=config['dropout'],
-                               num_heads=config['tx_num_heads'],
-                               L_dec=config['num_decoder_layers'],
-                               tx_hidden_size=config['tx_hidden_size'],
-                               use_map_img=config['use_map_image'],
-                               use_map_lanes=config['use_map_lanes'],
+                               L_enc=config.num_encoder_layers,
+                               dropout=config.dropout,
+                               num_heads=config.tx_num_heads,
+                               L_dec=config.num_decoder_layers,
+                               tx_hidden_size=config.tx_hidden_size,
+                               use_map_img=config.use_map_image,
+                               use_map_lanes=config.use_map_lanes,
                                map_attr=map_attr).to(device)
 
     model_dicts = torch.load(args.models_path, map_location={'cuda:1': 'cuda:0'})
@@ -95,7 +95,7 @@ def recompute_probs(pred_trajs, probs):
 
 if __name__ == "__main__":
     args, config, model_dirname = get_eval_args()
-    test_argoverse = ArgoH5Dataset(args.dataset_path, split_name="test", use_map_lanes=config['use_map_lanes'])
+    test_argoverse = ArgoH5Dataset(args.dataset_path, split_name="test", use_map_lanes=config.use_map_lanes)
     test_loader = torch.utils.data.DataLoader(
         test_argoverse, batch_size=args.batch_size, shuffle=False, num_workers=12, drop_last=False, pin_memory=False
     )
