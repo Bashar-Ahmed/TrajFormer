@@ -4,21 +4,7 @@ from torch.nn.init import constant_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.nn.functional import linear
 
-from models.sinkhorn import SinkhornSingle, SinkhornDual
-
-##############################################################################################
-def cost_1(X, Y, div=1):
-    return - X.bmm(Y.transpose(-2, -1)) / div
-
-def cost_2(X, Y, div=1):
-    X_sq = (X ** 2).sum(axis=-1)
-    Y_sq = (Y ** 2).sum(axis=-1)
-    cross_term = X.matmul(Y.transpose(-2, -1))
-    return (X_sq[:, :, None] + Y_sq[:, None, :] - 2 * cross_term) / (div ** 2)
-
-sinkhorn_dual = SinkhornDual(eps=1, max_iter=21)
-sinkhorn_single = SinkhornSingle(eps=1, max_iter=21)
-################################################################################################
+from models.sinkhorn import sinkhorn
 
 def multi_head_attention_forward(query,                           # type: Tensor
                                  key,                             # type: Tensor
@@ -210,8 +196,7 @@ def multi_head_attention_forward(query,                           # type: Tensor
         )
         attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
 
-    attn_output_weights = torch.softmax(
-        attn_output_weights, dim=-1)
+    attn_output_weights = sinkhorn(attn_output_weights)
     attn_output_weights = torch.dropout(attn_output_weights, p=dropout_p, train=training)
 
     attn_output = torch.bmm(attn_output_weights, v)
