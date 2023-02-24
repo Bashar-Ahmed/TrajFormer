@@ -6,7 +6,6 @@ from torch.nn import Module, ModuleList, LayerNorm, Dropout, Linear
 from torch.nn.init import xavier_uniform_
 from torch.nn.functional import relu, gelu
 
-import models.utils as utils
 from models.multiheadattention import MultiheadAttention
 
 class TransformerEncoder(Module):

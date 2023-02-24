@@ -13,7 +13,6 @@ from torch.nn.functional import linear
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from torch.overrides import has_torch_function, has_torch_function_unary
 
-import models.utils as utils
 from models.sinkhorn import SinkhornSingle, SinkhornDual
 
 ##############################################################################################
