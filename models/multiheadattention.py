@@ -1,17 +1,8 @@
-from typing import Optional, Tuple, List, TYPE_CHECKING
-if TYPE_CHECKING:
-    from torch.types import _dtype as DType
-else:
-    DType = int
-
-import torch, math
-from torch import Tensor, _VF
+import torch
 from torch.nn import Module, Softmax, Linear
 from torch.nn.init import constant_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.nn.functional import linear
-from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
-from torch.overrides import has_torch_function, has_torch_function_unary
 
 from models.sinkhorn import SinkhornSingle, SinkhornDual
 
@@ -28,33 +19,6 @@ def cost_2(X, Y, div=1):
 sinkhorn_dual = SinkhornDual(eps=1, max_iter=21)
 sinkhorn_single = SinkhornSingle(eps=1, max_iter=21)
 ################################################################################################
-
-def softmax(input, dim=None, _stacklevel=3, dtype=None):
-    # type: (Tensor, Optional[int], int, Optional[int]) -> Tensor
-    r"""Applies a softmax function.
-    Softmax is defined as:
-    :math:`\text{Softmax}(x_{i}) = \frac{exp(x_i)}{\sum_j exp(x_j)}`
-    It is applied to all slices along dim, and will re-scale them so that the elements
-    lie in the range `[0, 1]` and sum to 1.
-    See :class:`~torch.nn.Softmax` for more details.
-    Arguments:
-        input (Tensor): input
-        dim (int): A dimension along which softmax will be computed.
-        dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
-          If specified, the input tensor is casted to :attr:`dtype` before the operation
-          is performed. This is useful for preventing data type overflows. Default: None.
-    .. note::
-        This function doesn't work directly with NLLLoss,
-        which expects the Log to be computed between the Softmax and itself.
-        Use log_softmax instead (it's faster and has better numerical properties).
-    """
-    if dim is None:
-        dim = _get_softmax_dim('softmax', input.dim(), _stacklevel)
-    if dtype is None:
-        ret = input.softmax(dim)
-    else:
-        ret = input.softmax(dim, dtype=dtype)
-    return ret
 
 def multi_head_attention_forward(query,                           # type: Tensor
                                  key,                             # type: Tensor
@@ -80,52 +44,7 @@ def multi_head_attention_forward(query,                           # type: Tensor
                                  static_k=None,                   # type: Optional[Tensor]
                                  static_v=None                    # type: Optional[Tensor]
                                  ):
-    # type: (...) -> Tuple[Tensor, Optional[Tensor]]
-    r"""
-    Args:
-        query, key, value: map a query and a set of key-value pairs to an output.
-            See "Attention Is All You Need" for more details.
-        embed_dim_to_check: total dimension of the model.
-        num_heads: parallel attention heads.
-        in_proj_weight, in_proj_bias: input projection weight and bias.
-        bias_k, bias_v: bias of the key and value sequences to be added at dim=0.
-        add_zero_attn: add a new batch of zeros to the key and
-                       value sequences at dim=1.
-        dropout_p: probability of an element to be zeroed.
-        out_proj_weight, out_proj_bias: the output projection weight and bias.
-        training: apply dropout if is ``True``.
-        key_padding_mask: if provided, specified padding elements in the key will
-            be ignored by the attention. This is an binary mask. When the value is True,
-            the corresponding value on the attention layer will be filled with -inf.
-        need_weights: output attn_output_weights.
-        attn_mask: mask that prevents attention to certain positions. This is an additive mask
-            (i.e. the values will be added to the attention layer).
-        use_separate_proj_weight: the function accept the proj. weights for query, key,
-            and value in differnt forms. If false, in_proj_weight will be used, which is
-            a combination of q_proj_weight, k_proj_weight, v_proj_weight.
-        q_proj_weight, k_proj_weight, v_proj_weight, in_proj_bias: input projection weight and bias.
-        static_k, static_v: static key and value used for attention operators.
-    Shape:
-        Inputs:
-        - query: :math:`(L, N, E)` where L is the target sequence length, N is the batch size, E is
-          the embedding dimension.
-        - key: :math:`(S, N, E)`, where S is the source sequence length, N is the batch size, E is
-          the embedding dimension.
-        - value: :math:`(S, N, E)` where S is the source sequence length, N is the batch size, E is
-          the embedding dimension.
-        - key_padding_mask: :math:`(N, S)`, ByteTensor, where N is the batch size, S is the source sequence length.
-        - attn_mask: :math:`(L, S)` where L is the target sequence length, S is the source sequence length.
-        - static_k: :math:`(N*num_heads, S, E/num_heads)`, where S is the source sequence length,
-          N is the batch size, E is the embedding dimension. E/num_heads is the head dimension.
-        - static_v: :math:`(N*num_heads, S, E/num_heads)`, where S is the source sequence length,
-          N is the batch size, E is the embedding dimension. E/num_heads is the head dimension.
-        Outputs:
-        - attn_output: :math:`(L, N, E)` where L is the target sequence length, N is the batch size,
-          E is the embedding dimension.
-        - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
-          L is the target sequence length, S is the source sequence length.
-    """
-
+   
     qkv_same = torch.equal(query, key) and torch.equal(key, value)
     kv_same = torch.equal(key, value)
 
@@ -291,7 +210,7 @@ def multi_head_attention_forward(query,                           # type: Tensor
         )
         attn_output_weights = attn_output_weights.view(bsz * num_heads, tgt_len, src_len)
 
-    attn_output_weights = softmax(
+    attn_output_weights = torch.softmax(
         attn_output_weights, dim=-1)
     attn_output_weights = torch.dropout(attn_output_weights, p=dropout_p, train=training)
 
@@ -308,28 +227,6 @@ def multi_head_attention_forward(query,                           # type: Tensor
         return attn_output, None
 
 class MultiheadAttention(Module):
-    r"""Allows the model to jointly attend to information
-    from different representation subspaces.
-    See reference: Attention Is All You Need
-    .. math::
-        \text{MultiHead}(Q, K, V) = \text{Concat}(head_1,\dots,head_h)W^O
-        \text{where} head_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)
-    Args:
-        embed_dim: total dimension of the model.
-        num_heads: parallel attention heads.
-        dropout: a Dropout layer on attn_output_weights. Default: 0.0.
-        bias: add bias as module parameter. Default: True.
-        add_bias_kv: add bias to the key and value sequences at dim=0.
-        add_zero_attn: add a new batch of zeros to the key and
-                       value sequences at dim=1.
-        kdim: total number of features in key. Default: None.
-        vdim: total number of features in key. Default: None.
-        Note: if kdim and vdim are None, they will be set to embed_dim such that
-        query, key, and value have the same number of features.
-    Examples::
-        >>> multihead_attn = nn.MultiheadAttention(embed_dim, num_heads)
-        >>> attn_output, attn_output_weights = multihead_attn(query, key, value)
-    """
 
     def __init__(self, embed_dim, num_heads, dropout=0., bias=True, add_bias_kv=False, add_zero_attn=False, kdim=None, vdim=None):
         super(MultiheadAttention, self).__init__()
@@ -384,32 +281,7 @@ class MultiheadAttention(Module):
 
     def forward(self, query, key, value, key_padding_mask=None,
                 need_weights=True, attn_mask=None):
-        r"""
-    Args:
-        query, key, value: map a query and a set of key-value pairs to an output.
-            See "Attention Is All You Need" for more details.
-        key_padding_mask: if provided, specified padding elements in the key will
-            be ignored by the attention. This is an binary mask. When the value is True,
-            the corresponding value on the attention layer will be filled with -inf.
-        need_weights: output attn_output_weights.
-        attn_mask: mask that prevents attention to certain positions. This is an additive mask
-            (i.e. the values will be added to the attention layer).  
-    Shape:
-        - Inputs:
-        - query: :math:`(L, N, E)` where L is the target sequence length, N is the batch size, E is
-          the embedding dimension.
-        - key: :math:`(S, N, E)`, where S is the source sequence length, N is the batch size, E is
-          the embedding dimension.
-        - value: :math:`(S, N, E)` where S is the source sequence length, N is the batch size, E is
-          the embedding dimension.
-        - key_padding_mask: :math:`(N, S)`, ByteTensor, where N is the batch size, S is the source sequence length.
-        - attn_mask: :math:`(L, S)` where L is the target sequence length, S is the source sequence length.
-        - Outputs:
-        - attn_output: :math:`(L, N, E)` where L is the target sequence length, N is the batch size,
-          E is the embedding dimension.
-        - attn_output_weights: :math:`(N, L, S)` where N is the batch size,
-          L is the target sequence length, S is the source sequence length.
-        """
+
         if hasattr(self, '_qkv_same_embed_dim') and self._qkv_same_embed_dim is False:
             return multi_head_attention_forward(
                 query, key, value, self.embed_dim, self.num_heads,

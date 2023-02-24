@@ -1,9 +1,9 @@
 import math
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from models.context_encoders import MapEncoderCNN, MapEncoderPts
 
 from models.multiheadattention import MultiheadAttention
@@ -104,13 +104,13 @@ class AutoBotEgo(nn.Module):
         self.social_attn_layers = []
         self.temporal_attn_layers = []
         for _ in range(self.L_enc):
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=d_k, nhead=self.num_heads, dropout=self.dropout,
+            tx_encoder_layer = TransformerEncoderLayer(d_model=d_k, nhead=self.num_heads, dropout=self.dropout,
                                                           dim_feedforward=self.tx_hidden_size)
-            self.social_attn_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=1))
+            self.social_attn_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=1))
 
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=d_k, nhead=self.num_heads, dropout=self.dropout,
+            tx_encoder_layer = TransformerEncoderLayer(d_model=d_k, nhead=self.num_heads, dropout=self.dropout,
                                                           dim_feedforward=self.tx_hidden_size)
-            self.temporal_attn_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=1))
+            self.temporal_attn_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=1))
 
         self.temporal_attn_layers = nn.ModuleList(self.temporal_attn_layers)
         self.social_attn_layers = nn.ModuleList(self.social_attn_layers)
@@ -132,7 +132,7 @@ class AutoBotEgo(nn.Module):
 
         self.tx_decoder = []
         for _ in range(self.L_dec):
-            self.tx_decoder.append(nn.TransformerDecoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            self.tx_decoder.append(TransformerDecoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                               dropout=self.dropout,
                                                               dim_feedforward=self.tx_hidden_size))
         self.tx_decoder = nn.ModuleList(self.tx_decoder)
