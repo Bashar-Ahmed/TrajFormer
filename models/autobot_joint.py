@@ -106,13 +106,13 @@ class AutoBotJoint(nn.Module):
         self.social_attn_layers = []
         self.temporal_attn_layers = []
         for _ in range(self.L_enc):
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            tx_encoder_layer = TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.temporal_attn_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=2))
+            self.temporal_attn_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=2))
 
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            tx_encoder_layer = TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.social_attn_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=1))
+            self.social_attn_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=1))
 
         self.temporal_attn_layers = nn.ModuleList(self.temporal_attn_layers)
         self.social_attn_layers = nn.ModuleList(self.social_attn_layers)
@@ -136,12 +136,12 @@ class AutoBotJoint(nn.Module):
         self.social_attn_decoder_layers = []
         self.temporal_attn_decoder_layers = []
         for _ in range(self.L_dec):
-            tx_decoder_layer = nn.TransformerDecoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            tx_decoder_layer = TransformerDecoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.temporal_attn_decoder_layers.append(nn.TransformerDecoder(tx_decoder_layer, num_layers=2))
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            self.temporal_attn_decoder_layers.append(TransformerDecoder(tx_decoder_layer, num_layers=2))
+            tx_encoder_layer = TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.social_attn_decoder_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=1))
+            self.social_attn_decoder_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=1))
 
         self.temporal_attn_decoder_layers = nn.ModuleList(self.temporal_attn_decoder_layers)
         self.social_attn_decoder_layers = nn.ModuleList(self.social_attn_decoder_layers)

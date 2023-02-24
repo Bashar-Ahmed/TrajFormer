@@ -142,7 +142,7 @@ class SinkhornSingle(nn.Module):
         # Transport plan pi = diag(a)*K*diag(b)
         pi = torch.exp(self.M(C, U, V))
         # Sinkhorn distance
-        return pi, C, U, V
+        return pi
 
     def M(self, C, u, v):
         "Modified cost for logarithmic updates"
