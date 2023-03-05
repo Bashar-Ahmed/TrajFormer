@@ -6,6 +6,7 @@
 **/train
 **/val
 **/test
+**exp**
 
 datasets/nuscenes/v1.0-trainval_full/
 datasets/argoverse/argoverse-api
