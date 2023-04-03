@@ -189,7 +189,31 @@ class Trainer:
             epoch_mode_probs = []
             for i, data in enumerate(self.train_loader):
                 ego_in, ego_out, agents_in, roads = self._data_to_device(data)
-                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, roads)
+                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, roads, ri=True, ml=False)
+                weight = 1e-2
+                nll_loss, kl_loss, post_entropy, adefde_loss = nll_loss_multimodes(pred_obs, ego_out[:, :, :2], mode_probs,
+                                                                                   entropy_weight=self.args.entropy_weight,
+                                                                                   kl_weight=self.args.kl_weight,
+                                                                                   use_FDEADE_aux_loss=self.args.use_FDEADE_aux_loss)
+
+                nll_loss, kl_loss, post_entropy, adefde_loss = weight*nll_loss, weight*kl_loss, weight*post_entropy, weight*adefde_loss
+                self.optimiser.zero_grad()
+                (nll_loss + adefde_loss + kl_loss).backward()
+                nn.utils.clip_grad_norm_(self.autobot_model.parameters(), self.args.grad_clip_norm)
+                self.optimiser.step()
+
+                self.writer.add_scalar("Loss/nll", nll_loss.item(), steps)
+                self.writer.add_scalar("Loss/adefde", adefde_loss.item(), steps)
+                self.writer.add_scalar("Loss/kl", kl_loss.item(), steps)
+
+                with torch.no_grad():
+                    ade_losses, fde_losses = self._compute_ego_errors(pred_obs, ego_out)
+                    epoch_ade_losses.append(ade_losses)
+                    epoch_fde_losses.append(fde_losses)
+                    epoch_mode_probs.append(mode_probs.detach().cpu().numpy())
+
+                ego_in, ego_out, agents_in, roads = self._data_to_device(data)
+                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, roads, ri=False,ml=True)
 
                 nll_loss, kl_loss, post_entropy, adefde_loss = nll_loss_multimodes(pred_obs, ego_out[:, :, :2], mode_probs,
                                                                                    entropy_weight=self.args.entropy_weight,
@@ -298,7 +322,40 @@ class Trainer:
             epoch_mode_probs = []
             for i, data in enumerate(self.train_loader):
                 ego_in, ego_out, agents_in, agents_out, map_lanes, agent_types = self._data_to_device(data)
-                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, map_lanes, agent_types)
+                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, map_lanes, agent_types, ri=True, ml=False)
+                weight = 1e-2
+                nll_loss, kl_loss, post_entropy, adefde_loss = \
+                    nll_loss_multimodes_joint(pred_obs, ego_out, agents_out, mode_probs,
+                                              entropy_weight=self.args.entropy_weight,
+                                              kl_weight=self.args.kl_weight,
+                                              use_FDEADE_aux_loss=self.args.use_FDEADE_aux_loss,
+                                              agent_types=agent_types,
+                                              predict_yaw=self.predict_yaw)
+                nll_loss, kl_loss, post_entropy, adefde_loss = weight*nll_loss, weight*kl_loss, weight*post_entropy, weight*adefde_loss
+                self.optimiser.zero_grad()
+                (nll_loss + adefde_loss + kl_loss).backward()
+                nn.utils.clip_grad_norm_(self.autobot_model.parameters(), self.args.grad_clip_norm)
+                self.optimiser.step()
+
+                self.writer.add_scalar("Loss/nll", nll_loss.item(), steps)
+                self.writer.add_scalar("Loss/adefde", adefde_loss.item(), steps)
+                self.writer.add_scalar("Loss/kl", kl_loss.item(), steps)
+
+                with torch.no_grad():
+                    ade_losses, fde_losses = self._compute_marginal_errors(pred_obs, ego_out, agents_out, agents_in)
+                    epoch_marg_ade_losses.append(ade_losses.reshape(-1, self.args.num_modes))
+                    epoch_marg_fde_losses.append(fde_losses.reshape(-1, self.args.num_modes))
+                    epoch_marg_mode_probs.append(
+                        mode_probs.unsqueeze(1).repeat(1, self.num_other_agents + 1, 1).detach().cpu().numpy().reshape(
+                            -1, self.args.num_modes))
+
+                    scene_ade_losses, scene_fde_losses = self._compute_joint_errors(pred_obs, ego_out, agents_out)
+                    epoch_scene_ade_losses.append(scene_ade_losses)
+                    epoch_scene_fde_losses.append(scene_fde_losses)
+                    epoch_mode_probs.append(mode_probs.detach().cpu().numpy())
+
+                ego_in, ego_out, agents_in, agents_out, map_lanes, agent_types = self._data_to_device(data)
+                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, map_lanes, agent_types, ri=False, ml=True)
 
                 nll_loss, kl_loss, post_entropy, adefde_loss = \
                     nll_loss_multimodes_joint(pred_obs, ego_out, agents_out, mode_probs,
@@ -373,7 +430,7 @@ class Trainer:
             val_mode_probs = []
             for i, data in enumerate(self.val_loader):
                 ego_in, ego_out, agents_in, agents_out, context_img, agent_types = self._data_to_device(data)
-                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, context_img, agent_types)
+                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, context_img, agent_types,ri =False, ml=True)
 
                 # Marginal metrics
                 ade_losses, fde_losses = self._compute_marginal_errors(pred_obs, ego_out, agents_out, agents_in)

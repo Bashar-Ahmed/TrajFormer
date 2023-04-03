@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.context_encoders import MapEncoderPtsMA
-
+from models.point_transformer import PointTransformerLayer
 
 def init(module, weight_init, bias_init, gain=1):
     weight_init(module.weight.data, gain=gain)
@@ -98,6 +98,7 @@ class AutoBotJoint(nn.Module):
 
         # INPUT ENCODERS
         self.agents_dynamic_encoder = nn.Sequential(init_(nn.Linear(self.k_attr, self.d_k)))
+        self.rotation_invariance = PointTransformerLayer(dim=self.d_k, attr=self.k_attr)
 
         # ============================== AutoBot-Joint ENCODER ==============================
         self.social_attn_layers = []
@@ -238,7 +239,7 @@ class AutoBotJoint(nn.Module):
         agents_soc_emb = agents_soc_emb.view(self._M + 1, B, self.T, -1).permute(2, 1, 0, 3)
         return agents_soc_emb
 
-    def forward(self, ego_in, agents_in, roads, agent_types):
+    def forward(self, ego_in, agents_in, roads, agent_types, ri, ml):
         '''
         :param ego_in: one agent called ego, shape [B, T_obs, k_attr+1] with last values being the existence mask.
         :param agents_in: other scene agents, shape [B, T_obs, M-1, k_attr+1] with last values being the existence mask.
@@ -256,6 +257,8 @@ class AutoBotJoint(nn.Module):
         ego_tensor, _agents_tensor, opps_masks, env_masks = self.process_observations(ego_in, agents_in)
         agents_tensor = torch.cat((ego_tensor.unsqueeze(2), _agents_tensor), dim=2)
         agents_emb = self.agents_dynamic_encoder(agents_tensor).permute(1, 0, 2, 3)
+        if ri:
+            agents_emb = self.rotation_invariance(agents_emb.transpose(0,1).flatten(1,2), agents_tensor.flatten(1,2)).reshape(agents_emb.transpose(0,1).shape).transpose(0,1)
 
         # Process through AutoBot's encoder
         for i in range(self.L_enc):
@@ -263,7 +266,7 @@ class AutoBotJoint(nn.Module):
             agents_emb = self.social_attn_fn(agents_emb, opps_masks, layer=self.social_attn_layers[i])
 
         # Process map information
-        if self.use_map_lanes:
+        if self.use_map_lanes and ml:
             orig_map_features, orig_road_segs_masks = self.map_encoder(roads, agents_emb)
             map_features = orig_map_features.unsqueeze(2).repeat(1, 1, self.c, 1, 1).view(-1, B * self.c * (self._M+1), self.d_k)
             road_segs_masks = orig_road_segs_masks.unsqueeze(2).repeat(1, self.c, 1, 1).view(B * self.c * (self._M+1), -1)
@@ -285,7 +288,7 @@ class AutoBotJoint(nn.Module):
         agents_dec_emb = dec_parameters
 
         for d in range(self.L_dec):
-            if self.use_map_lanes and d == 1:
+            if self.use_map_lanes and d == 1 and ml:
                 agents_dec_emb = agents_dec_emb.reshape(self.T, -1, self.d_k)
                 agents_dec_emb_map = self.map_attn_layers(query=agents_dec_emb, key=map_features, value=map_features,
                                                           key_padding_mask=road_segs_masks)[0]
@@ -302,7 +305,7 @@ class AutoBotJoint(nn.Module):
         mode_params_emb = self.P.repeat(1, B, self._M+1, 1).view(self.c, -1, self.d_k)
         mode_params_emb = self.prob_decoder(query=mode_params_emb, key=agents_emb.reshape(-1, B*(self._M+1), self.d_k),
                                             value=agents_emb.reshape(-1, B*(self._M+1), self.d_k))[0]
-        if self.use_map_lanes:
+        if self.use_map_lanes and ml:
             orig_map_features = orig_map_features.view(-1, B*(self._M+1), self.d_k)
             orig_road_segs_masks = orig_road_segs_masks.view(B*(self._M+1), -1)
             mode_params_emb = self.mode_map_attn(query=mode_params_emb, key=orig_map_features, value=orig_map_features,

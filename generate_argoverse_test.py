@@ -117,7 +117,7 @@ if __name__ == "__main__":
             agents_in = agents_in.float().to(device)
             roads = roads.float().to(device)
 
-            pred_obs, mode_probs = autobot_model(ego_in, agents_in, roads)
+            pred_obs, mode_probs = autobot_model(ego_in, agents_in, roads, ri=True, ml=True)
             pred_obs = pred_obs.cpu().numpy()
             mode_probs = mode_probs.cpu().numpy()
 
