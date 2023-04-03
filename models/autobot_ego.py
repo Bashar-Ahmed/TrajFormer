@@ -4,8 +4,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.context_encoders import MapEncoderCNN, MapEncoderPts
 
+from models.context_encoders import MapEncoderCNN, MapEncoderPts
+from models.point_transformer import PointTransformerLayer
 
 def init(module, weight_init, bias_init, gain=1):
     '''
@@ -95,6 +96,7 @@ class AutoBotEgo(nn.Module):
 
         # INPUT ENCODERS
         self.agents_dynamic_encoder = nn.Sequential(init_(nn.Linear(k_attr, d_k)))
+        self.rotation_invariance = PointTransformerLayer(dim=self.d_k, attr=self.k_attr)
 
         # ============================== AutoBot-Ego ENCODER ==============================
         self.social_attn_layers = []
@@ -207,7 +209,7 @@ class AutoBotEgo(nn.Module):
         agents_soc_emb = agents_soc_emb.view(self._M+1, B, T_obs, -1).permute(2, 1, 0, 3)
         return agents_soc_emb
 
-    def forward(self, ego_in, agents_in, roads):
+    def forward(self, ego_in, agents_in, roads, ri, ml):
         '''
         :param ego_in: [B, T_obs, k_attr+1] with last values being the existence mask.
         :param agents_in: [B, T_obs, M-1, k_attr+1] with last values being the existence mask.
@@ -226,6 +228,9 @@ class AutoBotEgo(nn.Module):
         agents_tensor = torch.cat((ego_tensor.unsqueeze(2), _agents_tensor), dim=2)
         agents_emb = self.agents_dynamic_encoder(agents_tensor).permute(1, 0, 2, 3)
 
+        if ri:
+            agents_emb = self.rotation_invariance(agents_emb.transpose(0,1).flatten(1,2), agents_tensor.flatten(1,2)).reshape(agents_emb.transpose(0,1).shape).transpose(0,1)
+
         # Process through AutoBot's encoder
         for i in range(self.L_enc):
             agents_emb = self.temporal_attn_fn(agents_emb, opps_masks, layer=self.temporal_attn_layers[i])
@@ -236,7 +241,7 @@ class AutoBotEgo(nn.Module):
         if self.use_map_img:
             orig_map_features = self.map_encoder(roads)
             map_features = orig_map_features.view(B * self.c, -1).unsqueeze(0).repeat(self.T, 1, 1)
-        elif self.use_map_lanes:
+        elif self.use_map_lanes and ml:
             orig_map_features, orig_road_segs_masks = self.map_encoder(roads, ego_soctemp_emb)
             map_features = orig_map_features.unsqueeze(2).repeat(1, 1, self.c, 1).view(-1, B*self.c, self.d_k)
             road_segs_masks = orig_road_segs_masks.unsqueeze(1).repeat(1, self.c, 1).view(B*self.c, -1)
@@ -252,7 +257,7 @@ class AutoBotEgo(nn.Module):
             if self.use_map_img and d == 1:
                 ego_dec_emb_map = torch.cat((out_seq, map_features), dim=-1)
                 out_seq = self.emb_state_map(ego_dec_emb_map) + out_seq
-            elif self.use_map_lanes and d == 1:
+            elif self.use_map_lanes and ml and d == 1:
                 ego_dec_emb_map = self.map_attn_layers(query=out_seq, key=map_features, value=map_features,
                                                        key_padding_mask=road_segs_masks)[0]
                 out_seq = out_seq + ego_dec_emb_map
@@ -264,7 +269,7 @@ class AutoBotEgo(nn.Module):
         mode_params_emb = self.prob_decoder(query=mode_params_emb, key=ego_soctemp_emb, value=ego_soctemp_emb)[0]
         if self.use_map_img:
             mode_params_emb = self.modemap_net(torch.cat((mode_params_emb, orig_map_features.transpose(0, 1)), dim=-1))
-        elif self.use_map_lanes:
+        elif self.use_map_lanes and ml:
             mode_params_emb = self.mode_map_attn(query=mode_params_emb, key=orig_map_features, value=orig_map_features,
                                                  key_padding_mask=orig_road_segs_masks)[0] + mode_params_emb
         mode_probs = F.softmax(self.prob_predictor(mode_params_emb).squeeze(-1), dim=0).transpose(0, 1)
