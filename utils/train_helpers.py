@@ -99,6 +99,17 @@ def l2_loss_fde(pred, data):
     loss, min_inds = (fde_loss + ade_loss).min(dim=1)
     return 100.0 * loss.mean()
 
+def contrastive_loss(emb_i, emb_j, temperature=0.22):        
+
+    z_i = torch.nn.functional.normalize(emb_i, dim=1)
+    z_j = torch.nn.functional.normalize(emb_j, dim=1)
+
+    representations = torch.cat([z_i, z_j], dim=0)
+    similarity_matrix = torch.nn.functional.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=2)
+    
+    exp_matrix = torch.exp(similarity_matrix / temperature)
+    loss_matrix = -1 * torch.log(torch.softmax(exp_matrix, dim=-1))
+    return loss_matrix.mean() 
 
 # ==================================== AUTOBOT-JOINT STUFF ====================================
 

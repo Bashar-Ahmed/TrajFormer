@@ -1,5 +1,4 @@
 import math
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -7,6 +6,9 @@ import torch.nn.functional as F
 
 from models.context_encoders import MapEncoderPtsMA
 
+from models.multiheadattention import MultiheadAttention
+from models.transformer import TransformerEncoder, TransformerDecoder
+from models.transformer import TransformerEncoderLayer, TransformerDecoderLayer
 
 def init(module, weight_init, bias_init, gain=1):
     weight_init(module.weight.data, gain=gain)
@@ -103,13 +105,13 @@ class AutoBotJoint(nn.Module):
         self.social_attn_layers = []
         self.temporal_attn_layers = []
         for _ in range(self.L_enc):
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            tx_encoder_layer = TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.temporal_attn_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=2))
+            self.temporal_attn_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=2))
 
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            tx_encoder_layer = TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.social_attn_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=1))
+            self.social_attn_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=1))
 
         self.temporal_attn_layers = nn.ModuleList(self.temporal_attn_layers)
         self.social_attn_layers = nn.ModuleList(self.social_attn_layers)
@@ -117,7 +119,7 @@ class AutoBotJoint(nn.Module):
         # ============================== MAP ENCODER ==========================
         if self.use_map_lanes:
             self.map_encoder = MapEncoderPtsMA(d_k=self.d_k, map_attr=self.map_attr, dropout=self.dropout)
-            self.map_attn_layers = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+            self.map_attn_layers = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
 
         # ============================== AGENT TYPES Encoders ==============================
         self.emb_agent_types = nn.Sequential(init_(nn.Linear(num_agent_types, self.d_k)))
@@ -133,12 +135,12 @@ class AutoBotJoint(nn.Module):
         self.social_attn_decoder_layers = []
         self.temporal_attn_decoder_layers = []
         for _ in range(self.L_dec):
-            tx_decoder_layer = nn.TransformerDecoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            tx_decoder_layer = TransformerDecoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.temporal_attn_decoder_layers.append(nn.TransformerDecoder(tx_decoder_layer, num_layers=2))
-            tx_encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
+            self.temporal_attn_decoder_layers.append(TransformerDecoder(tx_decoder_layer, num_layers=2))
+            tx_encoder_layer = TransformerEncoderLayer(d_model=self.d_k, nhead=self.num_heads,
                                                           dropout=self.dropout, dim_feedforward=self.tx_hidden_size)
-            self.social_attn_decoder_layers.append(nn.TransformerEncoder(tx_encoder_layer, num_layers=1))
+            self.social_attn_decoder_layers.append(TransformerEncoder(tx_encoder_layer, num_layers=1))
 
         self.temporal_attn_decoder_layers = nn.ModuleList(self.temporal_attn_decoder_layers)
         self.social_attn_decoder_layers = nn.ModuleList(self.social_attn_decoder_layers)
@@ -154,9 +156,9 @@ class AutoBotJoint(nn.Module):
         nn.init.xavier_uniform_(self.P)
 
         if self.use_map_lanes:
-            self.mode_map_attn = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+            self.mode_map_attn = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
 
-        self.prob_decoder = nn.MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
+        self.prob_decoder = MultiheadAttention(self.d_k, num_heads=self.num_heads, dropout=self.dropout)
         self.prob_predictor = init_(nn.Linear(self.d_k, 1))
 
         self.train()
