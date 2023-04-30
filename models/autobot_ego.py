@@ -10,7 +10,6 @@ from models.multiheadattention import MultiheadAttention
 from models.transformer import TransformerEncoder, TransformerDecoder
 from models.transformer import TransformerEncoderLayer, TransformerDecoderLayer
 
-
 def init(module, weight_init, bias_init, gain=1):
     '''
     This function provides weight and bias initializations for linear layers.

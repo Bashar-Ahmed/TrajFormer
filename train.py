@@ -18,8 +18,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.tensorboard import SummaryWriter
 
 from utils.metric_helpers import min_xde_K
-from utils.train_helpers import nll_loss_multimodes, nll_loss_multimodes_joint
-
+from utils.train_helpers import nll_loss_multimodes, nll_loss_multimodes_joint, contrastive_loss
 
 class Trainer:
     def __init__(self, args, results_dirname):
@@ -37,6 +36,8 @@ class Trainer:
         self.initialize_dataloaders()
         self.initialize_model()
         self.optimiser = optim.Adam(self.autobot_model.parameters(), lr=self.args.learning_rate,
+                                    eps=self.args.adam_epsilon)
+        self.optimiser_copy = optim.Adam(self.autobot_model_copy.parameters(), lr=self.args.learning_rate,
                                     eps=self.args.adam_epsilon)
         self.optimiser_scheduler = MultiStepLR(self.optimiser, milestones=args.learning_rate_sched, gamma=0.5,
                                                verbose=True)
@@ -94,6 +95,19 @@ class Trainer:
     def initialize_model(self):
         if "Ego" in self.args.model_type:
             self.autobot_model = AutoBotEgo(k_attr=self.k_attr,
+                                            d_k=self.args.hidden_size,
+                                            _M=self.num_other_agents,
+                                            c=self.args.num_modes,
+                                            T=self.pred_horizon,
+                                            L_enc=self.args.num_encoder_layers,
+                                            dropout=self.args.dropout,
+                                            num_heads=self.args.tx_num_heads,
+                                            L_dec=self.args.num_decoder_layers,
+                                            tx_hidden_size=self.args.tx_hidden_size,
+                                            use_map_img=self.args.use_map_image,
+                                            use_map_lanes=self.args.use_map_lanes,
+                                            map_attr=self.map_attr).to(self.device)
+            self.autobot_model_copy = AutoBotEgo(k_attr=self.k_attr,
                                             d_k=self.args.hidden_size,
                                             _M=self.num_other_agents,
                                             c=self.args.num_modes,
@@ -189,33 +203,59 @@ class Trainer:
             epoch_mode_probs = []
             for i, data in enumerate(self.train_loader):
                 ego_in, ego_out, agents_in, roads = self._data_to_device(data)
-                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, roads)
 
+                pred_obs, mode_probs = self.autobot_model(ego_in, agents_in, roads)
                 nll_loss, kl_loss, post_entropy, adefde_loss = nll_loss_multimodes(pred_obs, ego_out[:, :, :2], mode_probs,
                                                                                    entropy_weight=self.args.entropy_weight,
                                                                                    kl_weight=self.args.kl_weight,
                                                                                    use_FDEADE_aux_loss=self.args.use_FDEADE_aux_loss)
 
+                pred_obs_copy, mode_probs_copy = self.autobot_model_copy(ego_in, agents_in, roads)
+                nll_loss_copy, kl_loss_copy, post_entropy_copy, adefde_loss_copy = nll_loss_multimodes(pred_obs_copy, ego_out[:, :, :2], mode_probs_copy,
+                                                                                   entropy_weight=self.args.entropy_weight,
+                                                                                   kl_weight=self.args.kl_weight,
+                                                                                   use_FDEADE_aux_loss=self.args.use_FDEADE_aux_loss)
+                
+                emb = torch.cat((pred_obs.permute(2,0,1,3).flatten(1,3),mode_probs),dim=1)
+                emb_copy = torch.cat((pred_obs_copy.permute(2,0,1,3).flatten(1,3),mode_probs_copy),dim=1)
+                c_loss = 100*contrastive_loss(emb,emb_copy)
+
+                # print(f"NLL {nll_loss}")
+                # print(f"adefde {adefde_loss}")
+                # print(f"KL {kl_loss}")
+                # print(f"CL {c_loss}")
+
                 self.optimiser.zero_grad()
-                (nll_loss + adefde_loss + kl_loss).backward()
+                (nll_loss + adefde_loss + kl_loss + c_loss).backward()
                 nn.utils.clip_grad_norm_(self.autobot_model.parameters(), self.args.grad_clip_norm)
                 self.optimiser.step()
+
+                self.optimiser_copy.zero_grad()
+                (nll_loss_copy + adefde_loss_copy + kl_loss_copy).backward(retain_graph=True)
+                nn.utils.clip_grad_norm_(self.autobot_model_copy.parameters(), self.args.grad_clip_norm)
+                self.optimiser_copy.step()
 
                 self.writer.add_scalar("Loss/nll", nll_loss.item(), steps)
                 self.writer.add_scalar("Loss/adefde", adefde_loss.item(), steps)
                 self.writer.add_scalar("Loss/kl", kl_loss.item(), steps)
+                # self.writer.add_scalar("Loss/nll", nll_loss_copy.item(), steps)
+                # self.writer.add_scalar("Loss/adefde", adefde_loss_copy.item(), steps)
+                # self.writer.add_scalar("Loss/kl", kl_loss_copy.item(), steps)
 
                 with torch.no_grad():
                     ade_losses, fde_losses = self._compute_ego_errors(pred_obs, ego_out)
+                    # ade_losses, fde_losses = self._compute_ego_errors(pred_obs_copy, ego_out)
                     epoch_ade_losses.append(ade_losses)
                     epoch_fde_losses.append(fde_losses)
                     epoch_mode_probs.append(mode_probs.detach().cpu().numpy())
+                    # epoch_mode_probs.append(mode_probs_copy.detach().cpu().numpy())
 
                 if i % 10 == 0:
                     print(i, "/", len(self.train_loader.dataset)//self.args.batch_size,
                           "NLL loss", round(nll_loss.item(), 2), "KL loss", round(kl_loss.item(), 2),
-                          "Prior Entropy", round(torch.mean(D.Categorical(mode_probs).entropy()).item(), 2),
-                          "Post Entropy", round(post_entropy, 2), "ADE+FDE loss", round(adefde_loss.item(), 2))
+                          "ADE+FDE loss", round(adefde_loss.item(), 2)
+                          , "C loss", round(c_loss.item(),2)
+                        )
 
                 steps += 1
 
