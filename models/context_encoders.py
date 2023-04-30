@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from models.multiheadattention import MultiheadAttention
 
 def init(module, weight_init, bias_init, gain=1):
     '''
@@ -58,7 +59,7 @@ class MapEncoderPts(nn.Module):
         init_ = lambda m: init(m, nn.init.xavier_normal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2))
 
         self.road_pts_lin = nn.Sequential(init_(nn.Linear(map_attr, self.d_k)))
-        self.road_pts_attn_layer = nn.MultiheadAttention(self.d_k, num_heads=8, dropout=self.dropout)
+        self.road_pts_attn_layer = MultiheadAttention(self.d_k, num_heads=8, dropout=self.dropout)
         self.norm1 = nn.LayerNorm(self.d_k, eps=1e-5)
         self.norm2 = nn.LayerNorm(self.d_k, eps=1e-5)
         self.map_feats = nn.Sequential(
@@ -116,7 +117,7 @@ class MapEncoderPtsMA(nn.Module):
         nn.init.xavier_uniform_(self.map_seeds)
 
         self.road_pts_lin = nn.Sequential(init_(nn.Linear(self.map_attr, self.d_k)))
-        self.road_pts_attn_layer = nn.MultiheadAttention(self.d_k, num_heads=8, dropout=self.dropout)
+        self.road_pts_attn_layer = MultiheadAttention(self.d_k, num_heads=8, dropout=self.dropout)
         self.norm1 = nn.LayerNorm(self.d_k, eps=1e-5)
         self.norm2 = nn.LayerNorm(self.d_k, eps=1e-5)
         self.map_feats = nn.Sequential(
